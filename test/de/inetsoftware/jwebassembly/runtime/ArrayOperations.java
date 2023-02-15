@@ -24,10 +24,8 @@ import java.util.zip.CRC32;
 
 import org.junit.Assume;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runners.Parameterized.Parameters;
-import org.w3c.dom.DOMStringList;
 
 import de.inetsoftware.jwebassembly.ScriptEngine;
 import de.inetsoftware.jwebassembly.WasmRule;
@@ -240,6 +238,7 @@ public class ArrayOperations extends AbstractBaseTest {
 
         @Export
         static int dup_x2() {
+            @SuppressWarnings("MismatchedReadAndWriteOfArray")
             Object[] data = {null,null,null};
             int index = 1;
             Object value = null;

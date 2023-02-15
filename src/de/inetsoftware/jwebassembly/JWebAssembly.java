@@ -120,9 +120,9 @@ public class JWebAssembly {
                 String msg = record.getMessage() + '\n';
                 if( record.getThrown() != null ) {
                     StringWriter sw = new StringWriter();
-                    PrintWriter pw = new PrintWriter( sw );
-                    record.getThrown().printStackTrace( pw );
-                    pw.close();
+                    try (PrintWriter pw = new PrintWriter( sw )) {
+                        record.getThrown().printStackTrace( pw );
+                    }
                     msg += sw.toString();
                 }
                 return msg;
@@ -233,7 +233,7 @@ public class JWebAssembly {
         try {
             compileToText( output );
             return output.toString();
-        } catch( Exception ex ) {
+        } catch( WasmException ex ) {
             System.err.println( output );
             throw ex;
         }
@@ -367,7 +367,7 @@ public class JWebAssembly {
                 ClassFile classFile = new ClassFile( new BufferedInputStream( url.openStream() ) );
                 generator.prepare( classFile );
             } catch( IOException ex ) {
-                LOGGER.fine( url + " " + ex );
+                LOGGER.log(Level.FINE, "{0} {1}", new Object[]{url, ex});
                 if( url.getFile().endsWith( ".class" ) ) {
                     throw WasmException.create( "Parsing of file " + url + " failed.", ex );
                 }
