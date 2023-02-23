@@ -30,11 +30,13 @@ public abstract class ReplacementForEnums {
 
     /**
      * Placeholder for existing public method.
+     * @return 
      */
     public native String name();
 
     /**
      * Placeholder for existing public method.
+     * @return 
      */
     public native static ReplacementForEnums[] values();
 

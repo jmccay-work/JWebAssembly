@@ -5,11 +5,32 @@ plugins {
     id 'com.github.kt3k.coveralls' version '2.11.0' // Coverage
 }
 
+// Allow people to developers who build their own to put in a private/company script to
+// load the custom maven publishing repository
+// Set localRepositoryScript in gradle.properties.
+if (project.hasProperty('localRepositoryScript') && localRepositoryScript.length() > 0) {
+    File repScript = new File("$localRepositoryScript")
+    if (repScript.exists()) {
+        apply from: "$localRepositoryScript"
+    }
+}
+
 sourceCompatibility = 1.8
 
 group 'de.inetsoftware'
 archivesBaseName = 'jwebassembly-compiler'
-version = '0.4'
+version = '0.4.7'
+String archivePreferredName = null;
+
+// 
+// Allow a developer building their own version the ability to add their own appendix.
+// Set theAppendix in gradle.properties in the root directory.
+if (project.hasProperty('theAppendix') && theAppendix.length() > 0) {
+    archivePreferredName = String.format("%s-%s", archivesBaseName, "$theAppendix")
+} else {
+    archivePreferredName = archivesBaseName
+}
+
 
 repositories {
     mavenCentral()
@@ -59,19 +80,35 @@ jar {
     manifest {
         attributes( 'Specification-Title': 'JWebAssembly-Compiler',
                     'Specification-Vendor': 'i-net software',
-                    'Specification-Version': version,
+                    'Specification-Version': archiveVersion,
                     'Implementation-Title': 'JWebAssembly-Compiler',
                     'Implementation-Vendor': 'i-net software',
-                    'Implementation-Version': version)
+                    'Implementation-Version': archiveVersion)
+    }
+}
+
+// task to list deprecated stuff in the compile
+tasks.withType(JavaCompile) {
+    options.deprecation = true
+    options.compilerArgs += ['-Xlint:deprecation']
+}
+
+tasks.withType(PublishToMavenRepository) {
+    doFirst {
+        println("Publishing ${publication.groupId}:${publication.artifactId}:${publication.version} to ${repository.url}")
     }
 }
 
 task sourcesJar(type: Jar, dependsOn: classes) {
+    archiveBaseName=archivesBaseName
+    archiveAppendix.set("$theAppendix")
     classifier = 'sources'
     from sourceSets.main.java
 }
 
 task javadocJar(type: Jar, dependsOn: javadoc) {
+    archiveBaseName=archivesBaseName
+    archiveAppendix.set("$theAppendix")
     classifier = 'javadoc'
     from javadoc.destinationDir
 }
@@ -118,6 +155,15 @@ check.dependsOn tasks.coveralls
  ****************************************/
 publishing {
     publications {
+        release(MavenPublication) {
+            from components.java
+            
+            artifactId archivePreferredName
+            
+            artifact(tasks.named("sourcesJar").get())
+            artifact(tasks.named("javadocJar").get())
+        }
+        
         JWebAssembly(MavenPublication) {
             from components.java
             artifact sourcesJar
@@ -151,6 +197,19 @@ publishing {
         }
     }
     repositories {
+        mavenLocal()
+/* Moved to local gradle script        
+        // Store the entire generated libraries to a directory named by the project name
+        // in the directory specified in the localRepositoryLocation property in the 
+        // gradle properties file in the root directory.
+        if (project.hasProperty('localRepositoryLocation') && localRepositoryLocation.length() > 0) {
+            maven {
+                name 'local'
+                url String.format("%s", localRepositoryLocation)
+            }
+        }
+*/
+
         maven {
             url 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
             if (project.hasProperty("ossrhUsername") ) {
@@ -165,9 +224,23 @@ publishing {
 
 signing {
     if (project.hasProperty("signing.keyId") ){
-       sign publishing.publications.JWebAssembly
+        sign publishing.publications.JWebAssembly
 
         // does not create sha256 and sha512 checksums
         System.setProperty('org.gradle.internal.publish.checksums.insecure', 'true' )
     }
 }
+
+/*
+def qedPub = tasks.register("allPublishQed") {
+    doLast {
+        System.out.println("QED Publishing to MavanLocal and Cloudsmith repositories.")
+    } 
+}
+
+qedPub.configure( {
+    finalizedBy publishAllPublicationsToCloudsmithRepository
+    finalizedBy publishAllPublicationsToMavenLocalRepository
+    finalizedBy publishAllPublicationsToLocalRepository
+})
+*/
