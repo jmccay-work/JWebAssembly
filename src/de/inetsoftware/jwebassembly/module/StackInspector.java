@@ -49,13 +49,16 @@ class StackInspector {
         // because there can be jumps (GOTO) we can analyze the stack only forward. If we iterate backward we will not see that we are in a jump.
         ArrayDeque<StackValue> stack = new ArrayDeque<>();
         int size = instructions.size();
+        WasmInstruction instr;
+        AnyType pushValue;
+        JumpInstruction jump;
         for( int i = 0; i < size; i++ ) {
-            WasmInstruction instr = instructions.get( i );
+            instr = instructions.get( i );
             int popCount = instr.getPopCount();
             for( int p = 0; p < popCount; p++ ) {
                 stack.pop();
             }
-            AnyType pushValue = instr.getPushValueType();
+            pushValue = instr.getPushValueType();
             if( pushValue != null ) {
                 StackValue el = new StackValue();
                 el.idx = i;
@@ -64,7 +67,7 @@ class StackInspector {
             }
             if( instr.getType() == Type.Jump ) {
                 if( popCount == 0 ) { // GOTO, for example on the end of the THEN branch
-                    JumpInstruction jump = (JumpInstruction)instr;
+                    jump = (JumpInstruction)instr;
                     int jumpPos = jump.getJumpPosition();
                     if( jumpPos > javaCodePos ) {
                         // we need a stack position inside a branch, we can remove all outside

@@ -80,7 +80,8 @@ public class MultiArrayFunctionName extends WatCodeSyntheticFunctionName {
      * @return the name
      */
     private static String createName( int dim, ArrayType type ) {
-        return "array_newmulti" + dim + "_" + getElementType( type );
+        // not sure what the string representation it supposed to be
+        return String.format("array_newmulti%d_%s", dim, getElementType( type ).name());
     }
 
     /**

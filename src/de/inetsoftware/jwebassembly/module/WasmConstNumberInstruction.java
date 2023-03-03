@@ -95,7 +95,8 @@ class WasmConstNumberInstruction extends WasmInstruction {
         } else if( clazz == Double.class ) {
             return ValueType.f64;
         } else {
-            throw new WasmException( "Not supported constant type: " + clazz, -1 );
+            // not sure about get the name
+            throw new WasmException( String.format("Not supported constant type: %s", clazz.getCanonicalName()), -1 );
         }
 
     }
@@ -137,6 +138,6 @@ class WasmConstNumberInstruction extends WasmInstruction {
      */
     @Override
     public String toString() {
-        return getClass().getSimpleName() + ": " + value;
+        return String.format("%s: %s", getClass().getSimpleName(), value.toString());
     }
 }

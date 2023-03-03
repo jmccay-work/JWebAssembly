@@ -51,6 +51,7 @@ import de.inetsoftware.jwebassembly.wasm.FunctionType;
 import de.inetsoftware.jwebassembly.wasm.ValueType;
 import de.inetsoftware.jwebassembly.wasm.ValueTypeParser;
 import de.inetsoftware.jwebassembly.watparser.WatParser;
+import java.net.URISyntaxException;
 
 /**
  * Generate the WebAssembly output.
@@ -86,6 +87,9 @@ public class ModuleGenerator {
     private final StaticCodeBuilder         staticCodeBuilder;
 
     private final HashSet<String>           exportNames = new HashSet<>();
+    
+    private static final String MISSING_FUNCTION = "Missing function: %s";
+    private static final String EMPTY_STRING = "";
 
     /**
      * Create a new generator.
@@ -102,7 +106,7 @@ public class ModuleGenerator {
         this.javaCodeBuilder = new JavaMethodWasmCodeBuilder( watParser );
         this.writer = writer;
         this.javaScript = new JavaScriptWriter( target );
-        this.classFileLoader = new ClassFileLoader( new URLClassLoader( libraries.toArray( new URL[libraries.size()] ) ) );
+        this.classFileLoader = new ClassFileLoader( new URLClassLoader( libraries.toArray(new URL[0] ) ) );
         WasmOptions options = writer.options;
         functions = options.functions;
         types = options.types;
@@ -125,21 +129,24 @@ public class ModuleGenerator {
      * @param libraries
      *            libraries
      */
+    @SuppressWarnings("CallToPrintStackTrace")
     private void scanLibraries( @Nonnull List<URL> libraries ) {
+        File file;
+        Path path;
         // search for replacement methods in the libraries
         for( URL url : libraries ) {
             try {
-                File file = new File(url.toURI());
+                file = new File(url.toURI());
                 if( file.isDirectory() ) {
                     for( Iterator<Path> iterator = Files.walk( file.toPath() ).iterator(); iterator.hasNext(); ) {
-                        Path path = iterator.next();
+                        path = iterator.next();
                         if( path.toString().endsWith( ".class" ) ) {
                             ClassFile classFile = new ClassFile( new BufferedInputStream( Files.newInputStream( path ) ) );
                             prepare( classFile );
                         }
                     }
                 }
-            } catch( Exception e ) {
+            } catch( IOException | URISyntaxException e ) {
                 e.printStackTrace();
             }
 
@@ -157,8 +164,9 @@ public class ModuleGenerator {
                                 } // does not close the zip stream
                             } );
                             prepare( classFile );
-                        } catch( Throwable th ) {
-                            JWebAssembly.LOGGER.log( Level.SEVERE, "Parsing error with " + entry.getName() + " in " + url, th );
+                        } catch( IOException th ) {
+                            JWebAssembly.LOGGER.log( Level.SEVERE, 
+                                    String.format("Parsing error with %s in %s", entry.getName(), url), th );
                         }
                     }
                 } while( true );
@@ -183,6 +191,7 @@ public class ModuleGenerator {
         // check if this class replace another class
         Map<String,Object> annotationValues;
         if( (annotationValues = classFile.getAnnotation( JWebAssembly.REPLACE_ANNOTATION )) != null ) {
+            @SuppressWarnings("null")
             String signatureName = (String)annotationValues.get( "value" );
             if( signatureName != null ) {
                 classFileLoader.replace( signatureName, classFile );
@@ -191,6 +200,7 @@ public class ModuleGenerator {
 
         // check if this class extends another class with partial code
         if( (annotationValues = classFile.getAnnotation( JWebAssembly.PARTIAL_ANNOTATION )) != null ) {
+            @SuppressWarnings("null")
             String signatureName = (String)annotationValues.get( "value" );
             if( signatureName != null ) {
                 classFileLoader.partial( signatureName, classFile );
@@ -207,13 +217,14 @@ public class ModuleGenerator {
      * @throws IOException
      *             if any I/O error occur
      */
+    @SuppressWarnings("null")
     private void scanFunctions() throws IOException {
         FunctionName next;
         NEXT:
         while( (next = functions.nextScannLater()) != null ) {
             className = next.className;
             methodName = next.methodName;
-            JWebAssembly.LOGGER.fine( "scan " + next.signatureName );
+            JWebAssembly.LOGGER.fine( String.format("scan %s", next.signatureName) );
             if( next instanceof SyntheticFunctionName ) {
                 SyntheticFunctionName synth = (SyntheticFunctionName)next;
                 if( synth.hasWasmCode() ) {
@@ -283,7 +294,7 @@ public class ModuleGenerator {
                 superClassFile = superClass == null ? null : classFileLoader.get( superClass.getName() );
             }
 
-            throw new WasmException( "Missing function: " + next.signatureName, -1 );
+            throw new WasmException( String.format(MISSING_FUNCTION, next.signatureName), -1 );
         }
     }
 
@@ -302,12 +313,14 @@ public class ModuleGenerator {
         // first scan direct interfaces
         for( ConstantClass iface : classFile.getInterfaces() ) {
             ClassFile iClassFile = classFileLoader.get( iface.getName() );
-            MethodInfo method = iClassFile.getMethod( next.methodName, next.signature );
-            if( method != null ) {
-                FunctionName name = new FunctionName( method );
-                functions.markAsNeeded( name, !method.isStatic() );
-                functions.setAlias( next, name );
-                return true; // we have found a super method
+            if (null != iClassFile) {
+                MethodInfo method = iClassFile.getMethod( next.methodName, next.signature );
+                if( method != null ) {
+                    FunctionName name = new FunctionName( method );
+                    functions.markAsNeeded( name, !method.isStatic() );
+                    functions.setAlias( next, name );
+                    return true; // we have found a super method
+                }
             }
         }
         // then possible super interfaces
@@ -390,8 +403,8 @@ public class ModuleGenerator {
     private void scanForClinit() throws IOException {
         JWebAssembly.LOGGER.fine( "scan for needed <clinit>" );
         for( Iterator<String> iterator = functions.getUsedClasses(); iterator.hasNext(); ) {
-            String className = iterator.next();
-            ClassFile classFile = classFileLoader.get( className );
+            String localClassName = iterator.next();
+            ClassFile classFile = classFileLoader.get(localClassName );
             if( classFile != null ) {
                 MethodInfo method = classFile.getMethod( CLASS_INIT, "()V" );
                 if( method != null ) {
@@ -434,7 +447,7 @@ public class ModuleGenerator {
             } else {
                 ClassFile classFile = classFileLoader.get( next.className );
                 if( classFile == null ) {
-                    throw new WasmException( "Missing function: " + next.signatureName, -1 );
+                    throw new WasmException( String.format(MISSING_FUNCTION, next.signatureName), -1 );
                 } else {
                     sourceFile = classFile.getSourceFile();
                     className = classFile.getThisClass().getName();
@@ -454,12 +467,12 @@ public class ModuleGenerator {
                             if( functions.needToWrite( next ) ) {
                                 writeMethod( next, method );
                             }
-                        } catch (Throwable ex){
+                        } catch (WasmException | IOException ex){
                             throw WasmException.create( ex, sourceFile, className, methodName, -1 );
                         }
                     } else {
                         if( functions.needToWrite( next ) ) {
-                            throw new WasmException( "Missing function: " + next.signatureName, -1 );
+                            throw new WasmException( String.format(MISSING_FUNCTION, next.signatureName), -1 );
                         }
                     }
                 }
@@ -488,7 +501,7 @@ public class ModuleGenerator {
             for( MethodInfo method : methods ) {
                 handler.accept( method );
             }
-        } catch( Throwable ioex ) {
+        } catch( IOException ioex ) {
             throw WasmException.create( ioex, sourceFile, className, methodName, -1 );
         }
     }
@@ -501,6 +514,7 @@ public class ModuleGenerator {
      * @throws WasmException
      *             if some Java code can't converted
      */
+    @SuppressWarnings("null")
     private void prepareMethod( MethodInfo method ) throws WasmException {
         try {
             FunctionName name = new FunctionName( method );
@@ -517,19 +531,18 @@ public class ModuleGenerator {
             }
             if( (annotationValues = method.getAnnotation( JWebAssembly.IMPORT_ANNOTATION )) != null ) {
                 if( !method.isStatic() ) {
-                    throw new WasmException( "Import method must be static: " + name.fullName, -1 );
+                    throw new WasmException( String.format("Import method must be static: %s", name.fullName), -1 );
                 }
                 functions.markAsImport( name, annotationValues );
                 return;
             }
             if( (annotationValues = method.getAnnotation( JWebAssembly.EXPORT_ANNOTATION )) != null ) {
                 if( !method.isStatic() ) {
-                    throw new WasmException( "Export method must be static: " + name.fullName, -1 );
+                    throw new WasmException( String.format("Export method must be static: %s", name.fullName), -1 );
                 }
                 functions.markAsExport( name, annotationValues );
-                return;
             }
-        } catch( Throwable ioex ) {
+        } catch( WasmException | IOException ioex ) {
             throw WasmException.create( ioex, sourceFile, className, methodName, -1 );
         }
     }
@@ -565,6 +578,7 @@ public class ModuleGenerator {
      *             if any I/O error occur
      */
     @Nullable
+    @SuppressWarnings({"UnusedAssignment", "null"})
     private WasmCodeBuilder createInstructions( MethodInfo method ) throws IOException {
         Code code = null;
         try {
@@ -582,12 +596,15 @@ public class ModuleGenerator {
             code = method.getCode();
             if( method.getAnnotation( JWebAssembly.TEXTCODE_ANNOTATION ) != null ) {
                 Map<String, Object> wat = method.getAnnotation( JWebAssembly.TEXTCODE_ANNOTATION );
-                String watCode = (String)wat.get( "value" );
-                String signature = (String)wat.get( "signature" );
-                if( signature == null ) {
-                    signature = method.getType();
+                if (null != wat) {
+                    String watCode = (String)wat.get( "value" );
+                    String signature = (String)wat.get( "signature" );
+                    if( signature == null ) {
+                        // this is not used?
+                        signature = method.getType();
+                    }
+                    watParser.parse( watCode, method, null, code == null ? -1 : code.getFirstLineNr() );
                 }
-                watParser.parse( watCode, method, null, code == null ? -1 : code.getFirstLineNr() );
                 return watParser;
             } else if( code != null ) {
                 javaCodeBuilder.buildCode( code, method );
@@ -599,15 +616,15 @@ public class ModuleGenerator {
                 FunctionName name = new FunctionName( method );
 
                 if( writer.options.ignoreNative() ) {
-                    JWebAssembly.LOGGER.severe( "Native method will throw an exception at runtime: " + name.signatureName );
+                    JWebAssembly.LOGGER.severe( String.format("Native method will throw an exception at runtime: %s", name.signatureName) );
                     WatCodeSyntheticFunctionName nativeStub = new WatCodeSyntheticFunctionName( name.className, name.methodName, name.signature, "unreachable", (AnyType[])null );
                     functions.markAsNeededAndReplaceIfExists( nativeStub );
                     return null;
                 }
 
-                throw new WasmException( "Native methods cannot be compiled to WebAssembly: " + name.signatureName +"\nIf you want to use classes with native code, you must use a library that implements these native methods, such as 'de.inetsoftware:jwebassembly-api:+' or implements this native method self.", -1 );
+                throw new WasmException( String.format("Native methods cannot be compiled to WebAssembly: %s\nIf you want to use classes with native code, you must use a library that implements these native methods, such as 'de.inetsoftware:jwebassembly-api:+' or implements this native method self.", name.signatureName), -1 );
             }
-        } catch( Throwable ioex ) {
+        } catch( WasmException | IOException ioex ) {
             int lineNumber = code == null ? -1 : code.getFirstLineNr();
             throw WasmException.create( ioex, sourceFile, className, methodName, lineNumber );
         }
@@ -661,7 +678,7 @@ public class ModuleGenerator {
                 }
 
                 instruction.writeTo( writer );
-            } catch( Throwable th ) {
+            } catch( IOException th ) {
                 throw WasmException.create( th, instruction.getLineNumber() );
             }
         }
@@ -686,9 +703,9 @@ public class ModuleGenerator {
             if( exportName == null || exportName.isEmpty() ) {
                 exportName = method.getName();  // TODO naming conversion rule if no name was set
             }
-            JWebAssembly.LOGGER.fine( "Export " + name.fullName + " as '" + exportName + "'" );
+            JWebAssembly.LOGGER.fine( String.format("Export %s as '%s'", name.fullName, exportName) );
             if( !exportNames.add( exportName ) ) {
-                throw new WasmException( "Duplicate export name '" + exportName + "' for " + name.fullName + ". Rename the method or use the 'name' attribute of the @Export annotation to create a unique export name.", -1 );
+                throw new WasmException( String.format("Duplicate export name '%s' for %s. Rename the method or use the 'name' attribute of the @Export annotation to create a unique export name.", exportName, name.fullName), -1 );
             }
             writer.writeExport( name, exportName );
         }
@@ -718,10 +735,11 @@ public class ModuleGenerator {
         }
         Iterator<AnyType> parser = name.getSignature( types );
         AnyType type;
+        String paramName;
         for( String kind : new String[] {"param","result"}) {
             while( parser.hasNext() && (type = parser.next()) != null ) {
-                String paramName = null;
-                if( kind == "param" ) {
+                paramName = null;
+                if( kind.equals("param") ) {
                     if( codeBuilder != null ) {
                         paramName = codeBuilder.getLocalName( paramCount );
                     }
@@ -733,11 +751,12 @@ public class ModuleGenerator {
             }
         }
         if( codeBuilder != null ) {
+            int idx;
             List<AnyType> localTypes = codeBuilder.getLocalTypes( paramCount );
             for( int i = 0; i < localTypes.size(); i++ ) {
                 type = localTypes.get( i );
-                int idx = paramCount + i;
-                String paramName = codeBuilder.getLocalName( idx );
+                idx = paramCount + i;
+                paramName = codeBuilder.getLocalName( idx );
                 writer.writeMethodParam( "local", type, paramName );
             }
         }

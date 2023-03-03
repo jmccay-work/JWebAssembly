@@ -98,8 +98,9 @@ class WasmConstClassInstruction extends WasmInstruction {
      */
     private static boolean isAscii( String str ) {
         int length = str.length();
+        int c;
         for( int i = 0; i < length; i++ ) {
-            int c = str.charAt( i );
+            c = str.charAt( i );
             if( c >= 0x20 && c < 0x7F ) {
                 continue;
             }
@@ -137,6 +138,6 @@ class WasmConstClassInstruction extends WasmInstruction {
      */
     @Override
     public String toString() {
-        return getClass().getSimpleName() + ": " + className;
+        return String.format("%s: %s", getClass().getSimpleName(), className);
     }
 }

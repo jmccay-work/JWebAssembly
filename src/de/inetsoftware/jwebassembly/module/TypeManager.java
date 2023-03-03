@@ -58,6 +58,10 @@ import de.inetsoftware.jwebassembly.watparser.WatParser;
  * @author Volker Berlin
  */
 public class TypeManager {
+    /**
+     * Constant for an empty string ("") to save memory.
+     */
+    private static final String             EMPTY_STRING                       = "";
 
     /** name of virtual function table, start with a point for an invalid Java identifier */
     static final String                     FIELD_VTABLE                       = ".vtable";
@@ -262,9 +266,10 @@ public class TypeManager {
      */
     WatCodeSyntheticFunctionName getTypeTableMemoryOffsetFunctionName() {
         WatCodeSyntheticFunctionName offsetFunction =
-                        new WatCodeSyntheticFunctionName( "java/lang/Class", "typeTableMemoryOffset", "()I", "", null, ValueType.i32 ) {
+                        new WatCodeSyntheticFunctionName( "java/lang/Class", "typeTableMemoryOffset", "()I", EMPTY_STRING, null, ValueType.i32 ) {
+                            @Override
                             protected String getCode() {
-                                return "i32.const " + typeTableOffset;
+                                return String.format("i32.const %d", typeTableOffset);
                             }
                         };
         options.functions.addReplacement( offsetFunction, null );
@@ -288,12 +293,12 @@ public class TypeManager {
      *            the requested type for debug output
      */
     private void checkStructTypesState( Object newType ) {
-        JWebAssembly.LOGGER.fine( "\t\ttype: " + newType );
+        JWebAssembly.LOGGER.fine( String.format("\t\ttype: %s", newType) );
         if( isFinish ) {
-            throw new WasmException( "Register needed type after scanning: " + newType, -1 );
+            throw new WasmException( String.format("Register needed type after scanning: %s", newType), -1 );
         }
 
-        if( structTypes.size() == 0 ) {
+        if( structTypes.isEmpty() ) {
             for( String primitiveTypeName : PRIMITIVE_CLASSES ) {
                 structTypes.put( primitiveTypeName, new StructType( primitiveTypeName, StructTypeKind.primitive, this ) );
             }
@@ -369,7 +374,7 @@ public class TypeManager {
                         componentClassIndex = valueOf( "java/lang/Object" ).classIndex;
                         break;
                     default:
-                        throw new WasmException( "Not supported array type: " + arrayType, -1 );
+                        throw new WasmException( String.format("Not supported array type: %s", arrayType), -1 );
                 }
             } else {
                 componentClassIndex = ((StructType)arrayType).classIndex;
@@ -414,7 +419,7 @@ public class TypeManager {
         } while( true );
         StructType interfaceType = (StructType)parser.next();
 
-        String typeName = implMethod.getClassName() + "$$" + implMethod.getName() + "/" + Math.abs( implMethod.getName().hashCode() );
+        String typeName = String.format("%s$$%s/%d", implMethod.getClassName(), implMethod.getName(), Math.abs( implMethod.getName().hashCode() ));
 
         LambdaType type = (LambdaType)structTypes.get( typeName );
         if( type == null ) {
@@ -453,14 +458,17 @@ public class TypeManager {
      */
     @Nonnull
     WatCodeSyntheticFunctionName createCallVirtual() {
+        StringBuffer sb = new StringBuffer(1024);
         return new WatCodeSyntheticFunctionName( //
-                        "callVirtual", "local.get 0 " // THIS
-                                        + "struct.get java/lang/Object .vtable " // vtable is on index 0
-                                        + "local.get 1 " // virtualFunctionIndex
-                                        + "i32.add " //
-                                        + "i32.load offset=0 align=4 " //
-                                        + "return " //
-                        , valueOf( "java/lang/Object" ), ValueType.i32, null, ValueType.i32 ); // THIS, virtualfunctionIndex, returns functionIndex
+                        "callVirtual", 
+                                    sb.append("local.get 0 ") // THIS
+                                      .append("struct.get java/lang/Object .vtable ") // vtable is on index 0
+                                      .append("local.get 1 ") // virtualFunctionIndex
+                                      .append("i32.add ") //
+                                      .append("i32.load offset=0 align=4 ") //
+                                      .append("return ") //
+                                      .toString(), 
+                  valueOf( "java/lang/Object" ), ValueType.i32, null, ValueType.i32 ); // THIS, virtualfunctionIndex, returns functionIndex
     }
 
     /**
@@ -488,42 +496,45 @@ public class TypeManager {
             } while( true );
         }
          */
+        StringBuffer sb = new StringBuffer(1024);
         return new WatCodeSyntheticFunctionName( //
-                        "callInterface", "local.get 0 " // $THIS
-                                        + "struct.get java/lang/Object .vtable " // vtable is on index 0
-                                        + "local.tee 3 " // save $table
-                                        + "i32.load offset=" + TYPE_DESCRIPTION_INTERFACE_OFFSET + " align=4 " // get offset of itable (int position 0, byte position 0)
-                                        + "local.get 3 " // save $table
-                                        + "i32.add " // $table += i32_load[$table]
-                                        + "local.set 3 " // save $table, the itable start location
-                                        + "loop" //
-                                        + "  local.get 3" // get $table
-                                        + "  i32.load offset=0 align=4" + "  local.tee 4" // save $nextClass
-                                        + "  local.get 1" // get $classIndex
-                                        + "  i32.eq" //
-                                        + "  if" // $nextClass == $classIndex
-                                        + "    local.get 3" // get $table
-                                        + "    local.get 2" // get $virtualfunctionIndex
-                                        + "    i32.add" // $table + $virtualfunctionIndex
-                                        + "    i32.load offset=0 align=4" // get the functionIndex
-                                        + "    return" //
-                                        + "  end" //
-                                        + "  local.get 4" // save $nextClass
-                                        + "  i32.eqz" //
-                                        + "  if" // current offset == end offset
-                                        + "    unreachable" // TODO throw a ClassCastException if exception handling is supported
-                                        + "  end" //
-                                        + "  local.get 3" // get $table
-                                        + "  i32.const 4" //
-                                        + "  i32.add" // $table + 4
-                                        + "  i32.load offset=0 align=4" // get the functionIndex
-                                        + "  local.get 3" // $table
-                                        + "  i32.add" // $table += i32_load[table + 4];
-                                        + "  local.set 3" // set $table
-                                        + "  br 0 " //
-                                        + "end " //
-                                        + "unreachable" // should never reach
-                        , valueOf( "java/lang/Object" ), ValueType.i32, ValueType.i32, null, ValueType.i32 ); // THIS, classIndex, virtualfunctionIndex, returns functionIndex
+                        "callInterface", 
+                            // TODO: all these strings should be refactored to 1 string to avoid creating so many String objects.
+                          sb.append("local.get 0 ") // $THIS
+                            .append("struct.get java/lang/Object .vtable ") // vtable is on index 0
+                            .append("local.tee 3 ") // save $table
+                            .append(String.format("i32.load offset=%d align=4 ", TYPE_DESCRIPTION_INTERFACE_OFFSET)) // get offset of itable (int position 0, byte position 0)
+                            .append("local.get 3 ") // save $table
+                            .append("i32.add ") // $table += i32_load[$table]
+                            .append("local.set 3 ") // save $table, the itable start location
+                            .append("loop") //
+                            .append("  local.get 3") // get $table
+                            .append("  i32.load offset=0 align=4  local.tee 4") // save $nextClass
+                            .append("  local.get 1") // get $classIndex
+                            .append("  i32.eq") //
+                            .append("  if") // $nextClass == $classIndex
+                            .append("    local.get 3") // get $table
+                            .append("    local.get 2") // get $virtualfunctionIndex
+                            .append("    i32.add") // $table + $virtualfunctionIndex
+                            .append("    i32.load offset=0 align=4") // get the functionIndex
+                            .append("    return") //
+                            .append("  end") //
+                            .append("  local.get 4") // save $nextClass
+                            .append("  i32.eqz") //
+                            .append("  if") // current offset == end offset
+                            .append("    unreachable") // TODO throw a ClassCastException if exception handling is supported
+                            .append("  end") //
+                            .append("  local.get 3") // get $table
+                            .append("  i32.const 4") //
+                            .append("  i32.add") // $table + 4
+                            .append("  i32.load offset=0 align=4") // get the functionIndex
+                            .append("  local.get 3") // $table
+                            .append("  i32.add") // $table += i32_load[table + 4];
+                            .append("  local.set 3") // set $table
+                            .append("  br 0 ") //
+                            .append("end ") //
+                            .append("unreachable") // should never reach
+                            .toString(), valueOf( "java/lang/Object" ), ValueType.i32, ValueType.i32, null, ValueType.i32 ); // THIS, classIndex, virtualfunctionIndex, returns functionIndex
     }
 
     /**
@@ -533,42 +544,45 @@ public class TypeManager {
      * @return the name
      */
     WatCodeSyntheticFunctionName createInstanceOf() {
+        StringBuffer sb = new StringBuffer(1024);
         return new WatCodeSyntheticFunctionName( //
-                        "instanceof", "local.get 0 " // THIS
-                                        + "ref.is_null if i32.const 0 return end " // NULL check
-                                        + "local.get 0 " // THIS
-                                        + "struct.get java/lang/Object .vtable " // vtable is on index 0
-                                        + "local.tee 2 " // save the vtable location
-                                        + "i32.load offset=" + TYPE_DESCRIPTION_INSTANCEOF_OFFSET + " align=4 " // get offset of instanceof inside vtable (int position 1, byte position 4)
-                                        + "local.get 2 " // get the vtable location
-                                        + "i32.add " //
-                                        + "local.tee 2 " // save the instanceof location
-                                        + "i32.load offset=0 align=4 " // count of instanceof entries
-                                        + "i32.const 4 " //
-                                        + "i32.mul " //
-                                        + "local.get 2 " // get the instanceof location
-                                        + "i32.add " //
-                                        + "local.set 3 " // save end position
-                                        + "loop" //
-                                        + "  local.get 2 " // get the instanceof location pointer
-                                        + "  local.get 3 " // get the end location
-                                        + "  i32.eq" //
-                                        + "  if" // current offset == end offset
-                                        + "    i32.const 0" // not found
-                                        + "    return" //
-                                        + "  end" //
-                                        + "  local.get 2" // get the instanceof location pointer
-                                        + "  i32.const 4" //
-                                        + "  i32.add" // increment offset
-                                        + "  local.tee 2" // save the instanceof location pointer
-                                        + "  i32.load offset=0 align=4" //
-                                        + "  local.get 1" // the class index that we search
-                                        + "  i32.ne" //
-                                        + "  br_if 0 " //
-                                        + "end " //
-                                        + "i32.const 1 " // class/interface found
-                                        + "return " //
-                        , valueOf( "java/lang/Object" ), ValueType.i32, null, ValueType.i32 ); // THIS, classIndex, returns boolean
+                        "instanceof", 
+                             sb.append("local.get 0 ") // THIS
+                               .append("ref.is_null if i32.const 0 return end ") // NULL check
+                               .append("local.get 0 ") // THIS
+                               .append("struct.get java/lang/Object .vtable ") // vtable is on index 0
+                               .append("local.tee 2 ") // save the vtable location
+                               .append(String.format("i32.load offset=%d align=4 ", TYPE_DESCRIPTION_INSTANCEOF_OFFSET)) // get offset of instanceof inside vtable (int position 1, byte position 4)
+                               .append("local.get 2 ") // get the vtable location
+                               .append("i32.add ") //
+                               .append("local.tee 2 ") // save the instanceof location
+                               .append("i32.load offset=0 align=4 ") // count of instanceof entries
+                               .append("i32.const 4 ") //
+                               .append("i32.mul ") //
+                               .append("local.get 2 ") // get the instanceof location
+                               .append("i32.add ") //
+                               .append("local.set 3 ") // save end position
+                               .append("loop") //
+                               .append("  local.get 2 ") // get the instanceof location pointer
+                               .append("  local.get 3 ") // get the end location
+                               .append("  i32.eq") //
+                               .append("  if") // current offset == end offset
+                               .append("    i32.const 0") // not found
+                               .append("    return") //
+                               .append("  end") //
+                               .append("  local.get 2") // get the instanceof location pointer
+                               .append("  i32.const 4") //
+                               .append("  i32.add") // increment offset
+                               .append("  local.tee 2") // save the instanceof location pointer
+                               .append("  i32.load offset=0 align=4") //
+                               .append("  local.get 1") // the class index that we search
+                               .append("  i32.ne") //
+                               .append("  br_if 0 ") //
+                               .append("end ") //
+                               .append("i32.const 1 ") // class/interface found
+                               .append("return ") //
+                               .toString(), 
+                valueOf( "java/lang/Object" ), ValueType.i32, null, ValueType.i32 ); // THIS, classIndex, returns boolean
     }
 
     /**
@@ -578,18 +592,21 @@ public class TypeManager {
      * @return the name
      */
     WatCodeSyntheticFunctionName createCast() {
+        StringBuffer sb = new StringBuffer(1024);
         return new WatCodeSyntheticFunctionName( //
-                        "cast", "local.get 0 " // THIS
-                                        + "ref.is_null if local.get 0 return end " // NULL check
-                                        + "local.get 0 " // THIS
-                                        + "local.get 1 " // the class index that we search
-                                        + "call $.instanceof()V " // the synthetic signature of ArraySyntheticFunctionName
-                                        + "if " //
-                                        + "  local.get 0 " // THIS
-                                        + "  return " //
-                                        + "end " //
-                                        + "unreachable " // TODO throw a ClassCastException if exception handling is supported
-                        , valueOf( "java/lang/Object" ), ValueType.i32, null, valueOf( "java/lang/Object" ) );
+                        "cast", 
+                            sb.append("local.get 0 ") // THIS
+                                  .append("ref.is_null if local.get 0 return end ") // NULL check
+                                  .append("local.get 0 ") // THIS
+                                  .append("local.get 1 ") // the class index that we search
+                                  .append("call $.instanceof()V ") // the synthetic signature of ArraySyntheticFunctionName
+                                  .append("if ") //
+                                  .append("  local.get 0 ") // THIS
+                                  .append("  return ") //
+                                  .append("end ") //
+                                  .append("unreachable ") // TODO throw a ClassCastException if exception handling is supported
+                                  .toString(), 
+                valueOf( "java/lang/Object" ), ValueType.i32, null, valueOf( "java/lang/Object" ) );
     }
 
     /**
@@ -679,7 +696,7 @@ public class TypeManager {
          *             if any I/O error occur on loading or writing
          */
         private void scanTypeHierarchy( FunctionManager functions, TypeManager types, ClassFileLoader classFileLoader ) throws IOException {
-            JWebAssembly.LOGGER.fine( "scan type hierachy: " + name );
+            JWebAssembly.LOGGER.fine( String.format("scan type hierachy: %s", name) );
             fields = new ArrayList<>();
             vtable = new ArrayList<>();
             instanceOFs = new LinkedHashSet<>(); // remembers the order from bottom to top class.
@@ -725,7 +742,7 @@ public class TypeManager {
          *             if any I/O error occur on loading or writing
          */
         private void writeStructType( ModuleWriter writer ) throws IOException {
-            JWebAssembly.LOGGER.fine( "write type: " + name );
+            JWebAssembly.LOGGER.fine( String.format("write type: %s", name) );
             code = writer.writeStructType( this );
         }
 
@@ -748,7 +765,7 @@ public class TypeManager {
         private void listStructFields( String className, FunctionManager functions, TypeManager types, ClassFileLoader classFileLoader, HashSet<String> allNeededFields ) throws IOException {
             ClassFile classFile = classFileLoader.get( className );
             if( classFile == null ) {
-                throw new WasmException( "Missing class: " + className, -1 );
+                throw new WasmException( String.format("Missing class: %s", className), -1 );
             }
 
             // interface does not need to resolve
@@ -800,13 +817,18 @@ public class TypeManager {
             }
 
             // search if there is a default implementation in an interface
+            FunctionName funcName;
+            String interName;
+            ClassFile interClassFile;
             for( ConstantClass interClass : classFile.getInterfaces() ) {
-                String interName = interClass.getName();
-                ClassFile interClassFile = classFileLoader.get( interName );
-                for( MethodInfo interMethod : interClassFile.getMethods() ) {
-                    FunctionName funcName = new FunctionName( interMethod );
-                    if( functions.isUsed( funcName ) ) {
-                        addOrUpdateVTable( functions, funcName, true );
+                interName = interClass.getName();
+                interClassFile = classFileLoader.get( interName );
+                if (null != interClassFile) {
+                    for( MethodInfo interMethod : interClassFile.getMethods() ) {
+                        funcName = new FunctionName( interMethod );
+                        if( functions.isUsed( funcName ) ) {
+                            addOrUpdateVTable( functions, funcName, true );
+                        }
                     }
                 }
             }
@@ -825,8 +847,9 @@ public class TypeManager {
         private void addOrUpdateVTable( FunctionManager functions, FunctionName funcName, boolean isDefault ) {
             int idx = 0;
             // search if the method is already in our list
+            FunctionName func;
             for( ; idx < vtable.size(); idx++ ) {
-                FunctionName func = vtable.get( idx );
+                func = vtable.get( idx );
                 if( func.methodName.equals( funcName.methodName ) && func.signature.equals( funcName.signature ) ) {
                     if( !isDefault || functions.getITableIndex( func ) >= 0 ) {
                         vtable.set( idx, funcName ); // use the override method
@@ -869,17 +892,21 @@ public class TypeManager {
             // all classes in the hierarchy
             ArrayList<ClassFile> classFiles = new ArrayList<>();
 
+            // TODO: this is sketchy and probably should be rewritten...
             // list classes of the hierarchy and its interfaces
             Set<String> interfaceNames = new LinkedHashSet<>();
+            ConstantClass superClass;
             for( ClassFile classFile = classFileLoader.get( name );; ) {
-                classFiles.add( classFile );
-                listInterfaceTypes( classFile, types, classFileLoader, interfaceTypes, interfaceNames );
+                if (null!=classFile) {
+                    classFiles.add( classFile );
+                    listInterfaceTypes( classFile, types, classFileLoader, interfaceTypes, interfaceNames );
 
-                ConstantClass superClass = classFile.getSuperClass();
-                if( superClass == null ) {
-                    break;
+                    superClass = classFile.getSuperClass();
+                    if( superClass == null ) {
+                        break;
+                    }
+                    classFile = classFileLoader.get( superClass.getName() );
                 }
-                classFile = classFileLoader.get( superClass.getName() );
             }
 
             // if the top most class abstract then there can be no instance. A itable we need only for an instance
@@ -888,43 +915,53 @@ public class TypeManager {
             }
 
             // create the itables for all interfaces of this type
+            String interName;
+            ClassFile interClassFile;
+            List<FunctionName> iMethods;
+            FunctionName iName;
+            MethodInfo method;
+            ClassFile iClassFile;
+            FunctionName methodName;
             for( StructType type : interfaceTypes ) {
-                String interName = type.name;
-                ClassFile interClassFile = classFileLoader.get( interName );
-                List<FunctionName> iMethods = null;
-
-                for( MethodInfo interMethod : interClassFile.getMethods() ) {
-                    FunctionName iName = new FunctionName( interMethod );
-                    if( functions.isUsed( iName ) ) {
-                        MethodInfo method = null;
-                        for( ClassFile classFile : classFiles ) {
-                            method = classFile.getMethod( iName.methodName, iName.signature );
-                            if( method != null ) {
-                                break;
-                            }
-                        }
-
-                        if( method == null ) {
-                            // search if there is a default implementation in an interface
-                            for( String iClassName : interfaceNames ) {
-                                ClassFile iClassFile = classFileLoader.get( iClassName );
-                                method = iClassFile.getMethod( iName.methodName, iName.signature );
+                interName = type.name;
+                interClassFile = classFileLoader.get( interName );
+                iMethods = null;
+                if (null!=interClassFile) {
+                    for( MethodInfo interMethod : interClassFile.getMethods() ) {
+                        iName = new FunctionName( interMethod );
+                        if( functions.isUsed( iName ) ) {
+                            method = null;
+                            for( ClassFile classFile : classFiles ) {
+                                method = classFile.getMethod( iName.methodName, iName.signature );
                                 if( method != null ) {
                                     break;
                                 }
                             }
-                        }
 
-                        if( method != null ) {
-                            FunctionName methodName = new FunctionName( method );
-                            functions.markAsNeeded( methodName, !method.isStatic() );
-                            if( iMethods == null ) {
-                                interfaceMethods.put( type, iMethods = new ArrayList<>() );
+                            if( method == null ) {
+                                // search if there is a default implementation in an interface
+                                for( String iClassName : interfaceNames ) {
+                                    iClassFile = classFileLoader.get( iClassName );
+                                    if (null!=iClassFile) {
+                                        method = iClassFile.getMethod( iName.methodName, iName.signature );
+                                        if( method != null ) {
+                                            break;
+                                        }
+                                    }
+                                }
                             }
-                            iMethods.add( methodName );
-                            functions.setITableIndex( iName, iMethods.size() + 1 ); // on the first two place the classIndex and the next position is saved
-                        } else {
-                            throw new WasmException( "No implementation of used interface method " + iName.signatureName + " for type " + name, -1 );
+
+                            if( method != null ) {
+                                methodName = new FunctionName( method );
+                                functions.markAsNeeded( methodName, !method.isStatic() );
+                                if( iMethods == null ) {
+                                    interfaceMethods.put( type, iMethods = new ArrayList<>() );
+                                }
+                                iMethods.add( methodName );
+                                functions.setITableIndex( iName, iMethods.size() + 1 ); // on the first two place the classIndex and the next position is saved
+                            } else {
+                                throw new WasmException( String.format("No implementation of used interface method %s for type %s", iName.signatureName, name), -1 );
+                            }
                         }
                     }
                 }
@@ -950,16 +987,19 @@ public class TypeManager {
         private void listInterfaceTypes( ClassFile classFile, TypeManager types, ClassFileLoader classFileLoader, Set<StructType> interfaceTypes, Set<String> interfaceNames ) throws IOException {
             // first list the direct interfaces
             ArrayList<ClassFile> later = null;
+            String interName;
+            ClassFile interClassFile;
+            StructType type;
             for( ConstantClass interClass : classFile.getInterfaces() ) {
-                String interName = interClass.getName();
+                interName = interClass.getName();
                 if( interfaceNames.add( interName ) ) {
-                    StructType type = types.structTypes.get( interName );
+                    type = types.structTypes.get( interName );
                     if( type != null ) {
                         interfaceTypes.add( type );
                         // add all used interfaces to the instanceof set
                         instanceOFs.add( type );
                     }
-                    ClassFile interClassFile = classFileLoader.get( interName );
+                    interClassFile = classFileLoader.get( interName );
                     if( interClassFile != null ) {
                         if( later == null ) {
                             later = new ArrayList<>();
@@ -970,8 +1010,8 @@ public class TypeManager {
             }
             // then possible super interfaces, the order is important for default methods
             if( later != null ) {
-                for( ClassFile interClassFile : later ) {
-                    listInterfaceTypes( interClassFile, types, classFileLoader, interfaceTypes, interfaceNames );
+                for( ClassFile interClassFile1 : later ) {
+                    listInterfaceTypes( interClassFile1, types, classFileLoader, interfaceTypes, interfaceNames );
                 }
             }
         }
@@ -1009,18 +1049,19 @@ public class TypeManager {
             }
 
             try {
+                ConstantClass superClass;
+                String superName;
                 ClassFile classFile = manager.classFileLoader.get( name );
                 String otherTypeName = structType.name;
                 while( classFile != null ) {
                     if( isSubTypeOf( classFile, otherTypeName )) {
                         return true;
                     }
-
-                    ConstantClass superClass = classFile.getSuperClass();
+                    superClass = classFile.getSuperClass();
                     if( superClass == null ) {
                         break;
                     }
-                    String superName = superClass.getName();
+                    superName = superClass.getName();
                     if( superName.equals( otherTypeName ) ) {
                         return true;
                     }
@@ -1029,7 +1070,6 @@ public class TypeManager {
             } catch( IOException ex ) {
                 throw new UncheckedIOException( ex );
             }
-
             return false;
         }
 
@@ -1149,20 +1189,23 @@ public class TypeManager {
 
             LittleEndianOutputStream header = new LittleEndianOutputStream( dataStream );
             LittleEndianOutputStream data = new LittleEndianOutputStream();
+            int functIdx; // maybe initialize and reinitialize in the next section
             for( FunctionName funcName : vtable ) {
-                int functIdx = getFunctionsID.applyAsInt( funcName );
+                functIdx = getFunctionsID.applyAsInt( funcName );
                 data.writeInt32( functIdx );
             }
 
             // header position TYPE_DESCRIPTION_INTERFACE_OFFSET
             header.writeInt32( data.size() + VTABLE_FIRST_FUNCTION_INDEX * 4 ); // offset of interface calls
+            List<FunctionName> iMethods;
+            int nextClassPosition;
             for( Entry<StructType, List<FunctionName>> entry : interfaceMethods.entrySet() ) {
                 data.writeInt32( entry.getKey().getClassIndex() );
-                List<FunctionName> iMethods = entry.getValue();
-                int nextClassPosition = 4 * (2 + iMethods.size());
+                iMethods = entry.getValue();
+                nextClassPosition = 4 * (2 + iMethods.size());
                 data.writeInt32( nextClassPosition );
                 for( FunctionName funcName : iMethods ) {
-                    int functIdx = getFunctionsID.applyAsInt( funcName );
+                    functIdx = getFunctionsID.applyAsInt( funcName );
                     data.writeInt32( functIdx );
                 }
             }
@@ -1210,7 +1253,7 @@ public class TypeManager {
          */
         @Override
         public String toString() {
-            return "$" + name;
+            return String.format("$%s", name);
         }
     }
 
@@ -1223,7 +1266,7 @@ public class TypeManager {
 
         private StructType                  interfaceType;
 
-        private FunctionName                methodName;
+        private final FunctionName                methodName;
 
         private String                      interfaceMethodName;
 
@@ -1251,7 +1294,7 @@ public class TypeManager {
             super( name, StructTypeKind.lambda, manager );
             this.paramFields = new ArrayList<>( params.size() );
             for( int i = 0; i < params.size(); i++ ) {
-                paramFields.add( new NamedStorageType( params.get( i ), "", "arg$" + (i + 1) ) );
+                paramFields.add( new NamedStorageType( params.get( i ), EMPTY_STRING, String.format("arg$%d", (i + 1)) ) );
             }
             this.interfaceType = interfaceType;
             this.interfaceMethodName = interfaceMethodName;
@@ -1284,8 +1327,9 @@ public class TypeManager {
                     }
 
                     // forward the parameter from the current call without the THIS parameter because the call lambda method is static
+                    AnyType anyType;
                     for( int i = 1; i < sig.size(); i++ ) {
-                        AnyType anyType = sig.get( i );
+                        anyType = sig.get( i );
                         if( anyType == null ) {
                             break;
                         }
@@ -1296,9 +1340,11 @@ public class TypeManager {
                     try {
                         // a lambda expression function is mostly static else it need access to field.
                         ClassFile classFile = classFileLoader.get( syntheticLambdaFunctionName.className );
-                        MethodInfo methodInfo = classFile.getMethod( syntheticLambdaFunctionName.methodName, syntheticLambdaFunctionName.signature );
-                        needThisParameter = !methodInfo.isStatic();
-                    } catch( Exception ex ) {
+                        if (null != classFile) {
+                            MethodInfo methodInfo = classFile.getMethod( syntheticLambdaFunctionName.methodName, syntheticLambdaFunctionName.signature );
+                            needThisParameter = !methodInfo.isStatic();
+                        }
+                    } catch( IOException ex ) {
                         throw WasmException.create( ex, null, syntheticLambdaFunctionName.className, syntheticLambdaFunctionName.methodName, lineNumber );
                     }
 

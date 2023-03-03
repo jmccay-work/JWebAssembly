@@ -38,11 +38,11 @@ import de.inetsoftware.jwebassembly.watparser.WatParser;
  * @author Volker Berlin
  */
 class StaticCodeBuilder {
-    private WasmOptions                    options;
+    private final WasmOptions                    options;
 
-    private ClassFileLoader                classFileLoader;
+    private final ClassFileLoader                classFileLoader;
 
-    private JavaMethodWasmCodeBuilder      javaCodeBuilder;
+    private final JavaMethodWasmCodeBuilder      javaCodeBuilder;
 
     /**
      * Create a instance with a snapshot of all static class initializer.
@@ -157,47 +157,50 @@ class StaticCodeBuilder {
         WasmInstruction instr = null;
         try {
             ClassFile classFile = classFileLoader.get( className );
-            sourceFile = classFile.getSourceFile();
-            MethodInfo method = classFile.getMethod( name.methodName, name.signature );
-            method = options.functions.replace( name, method );
+            if (null != classFile) {
+                sourceFile = classFile.getSourceFile();
+                MethodInfo method = classFile.getMethod( name.methodName, name.signature );
+                method = options.functions.replace( name, method );
 
-            Code code = method.getCode();
-            javaCodeBuilder.buildCode( code, method );
+                Code code = method.getCode();
+                javaCodeBuilder.buildCode( code, method );
 
-            List<WasmInstruction> instructions = javaCodeBuilder.getInstructions();
+                List<WasmInstruction> instructions = javaCodeBuilder.getInstructions();
 
-            // search for references to other classes
-            for( int i = 0; i < instructions.size(); i++ ) {
-                instr = instructions.get( i );
+                // search for references to other classes
                 String otherClassName;
-                switch( instr.getType() ) {
-                    case Global:
-                        WasmGlobalInstruction global = (WasmGlobalInstruction)instr;
-                        otherClassName = global.getFieldName().className;
-                        break;
-                    case Call:
-                        WasmCallInstruction call = (WasmCallInstruction)instr;
-                        otherClassName = call.getFunctionName().className;
-                        break;
-                    default:
-                        continue;
-                }
-                if( className.equals( otherClassName ) ) {
-                    continue; // field or method in own class
-                }
-                // search if the other class has a static constructor
-                FunctionName clinit = constructors.get( className );
-                if( clinit != null ) {
-                    if( state == null ) {
-                        state = new ScanState();
-                        state.name = name;
-                        state.instructions = new ArrayList<>( instructions );
-                        state.localVariables = javaCodeBuilder.getLocalVariables().getCopy();
+                FunctionName clinit;
+                for( int i = 0; i < instructions.size(); i++ ) {
+                    instr = instructions.get( i );                    
+                    switch( instr.getType() ) {
+                        case Global:
+                            WasmGlobalInstruction global = (WasmGlobalInstruction)instr;
+                            otherClassName = global.getFieldName().className;
+                            break;
+                        case Call:
+                            WasmCallInstruction call = (WasmCallInstruction)instr;
+                            otherClassName = call.getFunctionName().className;
+                            break;
+                        default:
+                            continue;
                     }
-                    state.dependenciesClasses.add( otherClassName );
+                    if( className.equals( otherClassName ) ) {
+                        continue; // field or method in own class
+                    }
+                    // search if the other class has a static constructor
+                    clinit = constructors.get( className );
+                    if( clinit != null ) {
+                        if( state == null ) {
+                            state = new ScanState();
+                            state.name = name;
+                            state.instructions = new ArrayList<>( instructions );
+                            state.localVariables = javaCodeBuilder.getLocalVariables().getCopy();
+                        }
+                        state.dependenciesClasses.add( otherClassName );
+                    }
                 }
             }
-        } catch( Throwable ex ) {
+        } catch( IOException ex ) {
             throw WasmException.create( ex, sourceFile, className, name.methodName, instr == null ? -1 : instr.getLineNumber() );
         }
         return state;
@@ -211,6 +214,7 @@ class StaticCodeBuilder {
      * @param scans
      *            a list with all static constructors which was not called
      */
+    @SuppressWarnings("UnusedAssignment")
     private void patch( ScanState scan, LinkedHashMap<String, ScanState> scans ) {
         FunctionName name = scan.name;
         String className = name.className;

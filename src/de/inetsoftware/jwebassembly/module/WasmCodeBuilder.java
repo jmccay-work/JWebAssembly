@@ -48,6 +48,7 @@ import de.inetsoftware.jwebassembly.wasm.ValueType;
 import de.inetsoftware.jwebassembly.wasm.ValueTypeParser;
 import de.inetsoftware.jwebassembly.wasm.VariableOperator;
 import de.inetsoftware.jwebassembly.wasm.WasmBlockOperator;
+import java.io.IOException;
 
 /**
  * Base class for Code Building.
@@ -513,12 +514,16 @@ public abstract class WasmCodeBuilder {
             if( fieldName.startsWith( "$" ) ) {
                 fieldName = fieldName.substring( 1 );
             }
-            FunctionName name = new FunctionName( fieldName + "()V" );
+            FunctionName name = new FunctionName( String.format("%s()V", fieldName) );
             ClassFile classFile = classFileLoader.get( name.className );
-            FieldInfo field = classFile.getField( name.methodName );
-            AnyType type = new ValueTypeParser( field.getType(), types ).next();
-            addGlobalInstruction( load, name, type, null, javaCodePos, lineNumber );
-        } catch( Throwable ex ) {
+            if (null!=classFile) {
+                FieldInfo field = classFile.getField( name.methodName );
+                if (null!=field) {
+                    AnyType type = new ValueTypeParser( field.getType(), types ).next();
+                    addGlobalInstruction( load, name, type, null, javaCodePos, lineNumber );
+                }
+            }
+        } catch( IOException ex ) {
             throw WasmException.create( ex, lineNumber );
         }
     }
@@ -574,7 +579,7 @@ public abstract class WasmCodeBuilder {
             instructions.add( new WasmConstClassInstruction( (ConstantClass)value, types, javaCodePos, lineNumber ) );
         } else {
             //TODO There can be MethodType and MethodHandle
-            throw new WasmException( "Class constants are not supported. : " + value, lineNumber );
+            throw new WasmException( String.format("Class constants are not supported. %s: ", value), lineNumber );
         }
     }
 
@@ -626,6 +631,7 @@ public abstract class WasmCodeBuilder {
      * @param lineNumber
      *            the line number in the Java source code
      */
+    @SuppressWarnings("UnusedAssignment")
     protected void addCallInstruction( @Nonnull FunctionName name, boolean needThisParameter, int javaCodePos, int lineNumber ) {
         name = functions.markAsNeeded( name, needThisParameter );
         WasmCallInstruction instruction = new WasmCallInstruction( name, javaCodePos, lineNumber, types, needThisParameter );
@@ -801,10 +807,10 @@ public abstract class WasmCodeBuilder {
                     return new FunctionName( method );
                 }
             }
-        } catch( Throwable ex ) {
+        } catch( IOException ex ) {
             throw WasmException.create( ex, lineNumber );
         }
-        throw new WasmException( "Not implemented NonGC polyfill function: " + name, lineNumber );
+        throw new WasmException( String.format("Not implemented NonGC polyfill function: %s", name), lineNumber );
     }
 
     /**

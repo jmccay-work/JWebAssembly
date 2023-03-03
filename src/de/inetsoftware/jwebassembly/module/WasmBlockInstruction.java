@@ -173,6 +173,6 @@ class WasmBlockInstruction extends WasmInstruction {
      */
     @Override
     public String toString() {
-        return getClass().getSimpleName() + ": " + op + (data == null || data == ValueType.empty ? "" : " " + data);
+        return String.format("%s: %s %s", getClass().getSimpleName(), op, (data == null || data == ValueType.empty ? "" : String.format(" %s", data.toString())));
     }
 }

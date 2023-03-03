@@ -101,12 +101,14 @@ class UnsafeManager {
      */
     void replaceUnsafe( List<WasmInstruction> instructions ) {
         // search for Unsafe function calls
+        WasmInstruction instr;
+        WasmCallInstruction callInst;
         for( int i = 0; i < instructions.size(); i++ ) {
-            WasmInstruction instr = instructions.get( i );
+            instr = instructions.get( i );
             switch( instr.getType() ) {
                 case CallVirtual:
                 case Call:
-                    WasmCallInstruction callInst = (WasmCallInstruction)instr;
+                    callInst = (WasmCallInstruction)instr;
                     switch( callInst.getFunctionName().className ) {
                         case UNSAFE_8:
                         case UNSAFE_11:

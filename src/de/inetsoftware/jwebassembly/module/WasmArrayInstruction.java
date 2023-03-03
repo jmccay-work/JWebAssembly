@@ -46,6 +46,8 @@ class WasmArrayInstruction extends WasmInstruction {
     private final TypeManager     types;
 
     private SyntheticFunctionName functionName;
+    
+    private static final String EMPTY_STRING = "";
 
     /**
      * Create an instance of an array operation.
@@ -79,17 +81,20 @@ class WasmArrayInstruction extends WasmInstruction {
         if( useGC ) {
             switch( op ) {
                 case NEW:
-                    functionName = new WatCodeSyntheticFunctionName( "array_new_" + validJsName( type ), "", ValueType.i32, null, arrayType ) {
+                    functionName = new WatCodeSyntheticFunctionName( String.format("array_new_%s", validJsName( type )), EMPTY_STRING, ValueType.i32, null, arrayType ) {
                         @Override
                         protected String getCode() {
+                            StringBuilder sb = new StringBuilder();
                             String nativeArrayTypeName = ((ArrayType)arrayType.getNativeArrayType()).getName();
-                            return "i32.const " + arrayType.getVTable() + " i32.const 0" // hashcode
-                                            + " local.get 0" // array size
-                                            + " rtt.canon " + nativeArrayTypeName //
-                                            + " array.new_default_with_rtt " + nativeArrayTypeName //
-                                            + " rtt.canon " + arrayType.getName() //
-                                            + " struct.new_with_rtt " + arrayType.getName() //
-                                            + " return";
+                            return sb.append("i32.const ")
+                                     .append(arrayType.getVTable()).append(" i32.const 0") // hashcode
+                                     .append(" local.get 0") // array size
+                                     .append(" rtt.canon ").append(nativeArrayTypeName) //
+                                     .append(" array.new_default_with_rtt ").append(nativeArrayTypeName) //
+                                     .append(" rtt.canon ").append(arrayType.getName()) //
+                                     .append(" struct.new_with_rtt ").append(arrayType.getName()) //
+                                     .append(" return")
+                                     .toString();
                         }
                     };
             }
@@ -125,7 +130,7 @@ class WasmArrayInstruction extends WasmInstruction {
                                 cmd = "Object.seal(new Array(l).fill(null))";
                         }
                     }
-                    functionName = new JavaScriptSyntheticFunctionName( "NonGC", "array_new_" + validJsName( type ), () -> {
+                    functionName = new JavaScriptSyntheticFunctionName( "NonGC", String.format("array_new_%s", validJsName( type )), () -> {
                         // create the default values of a new type
                         return new StringBuilder( "(l)=>Object.seal({0:" ) // fix count of elements
                                         .append( arrayType.getVTable() ) // .vtable
@@ -138,10 +143,10 @@ class WasmArrayInstruction extends WasmInstruction {
                 case GET:
                 case GET_S:
                 case GET_U:
-                    functionName = new JavaScriptSyntheticFunctionName( "NonGC", "array_get_" + validJsName( functionType ), () -> "(a,i)=>a[2][i]", ValueType.externref, ValueType.i32, null, functionType );
+                    functionName = new JavaScriptSyntheticFunctionName( "NonGC", String.format("array_get_%s", validJsName( functionType )), () -> "(a,i)=>a[2][i]", ValueType.externref, ValueType.i32, null, functionType );
                     break;
                 case SET:
-                    functionName = new JavaScriptSyntheticFunctionName( "NonGC", "array_set_" + validJsName( functionType ), () -> "(a,i,v)=>a[2][i]=v", ValueType.externref, ValueType.i32, functionType, null, null );
+                    functionName = new JavaScriptSyntheticFunctionName( "NonGC", String.format("array_set_%s", validJsName( functionType )), () -> "(a,i,v)=>a[2][i]=v", ValueType.externref, ValueType.i32, functionType, null, null );
                     break;
                 case LEN:
                     functionName = new JavaScriptSyntheticFunctionName( "NonGC", "array_len", () -> "(a)=>a[2].length", ValueType.externref, null, ValueType.i32 );
@@ -160,7 +165,7 @@ class WasmArrayInstruction extends WasmInstruction {
      */
     private static String validJsName( AnyType type ) {
         if( type.isRefType() ) {
-            return ((StructType)type).getName().replace( '[', '_' ).replace( '/', '_' ).replace( '.', '_' ).replace( ";", "" );
+            return ((StructType)type).getName().replace( '[', '_' ).replace( '/', '_' ).replace( '.', '_' ).replace( ";", EMPTY_STRING );
         }
         return type.toString();
     }
@@ -207,7 +212,7 @@ class WasmArrayInstruction extends WasmInstruction {
             case LEN:
                 return ValueType.i32;
             default:
-                throw new WasmException( "Unknown array operation: " + op, -1 );
+                throw new WasmException( String.format("Unknown array operation: %s", op), -1 );
         }
     }
 
@@ -228,7 +233,7 @@ class WasmArrayInstruction extends WasmInstruction {
             case SET:
                 return 3;
             default:
-                throw new WasmException( "Unknown array operation: " + op, -1 );
+                throw new WasmException( String.format("Unknown array operation: %s", op), -1 );
         }
     }
 
@@ -251,7 +256,7 @@ class WasmArrayInstruction extends WasmInstruction {
             case SET:
                 return new AnyType[] { arrayType, ValueType.i32, type };
             default:
-                throw new WasmException( "Unknown array operation: " + op, -1 );
+                throw new WasmException( String.format("Unknown array operation: %s", op), -1 );
         }
     }
 }

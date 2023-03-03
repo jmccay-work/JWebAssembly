@@ -115,6 +115,7 @@ class WasmCallInstruction extends WasmInstruction {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void writeTo( @Nonnull ModuleWriter writer ) throws IOException {
         writer.writeFunctionCall( name, comment );
     }
@@ -122,6 +123,7 @@ class WasmCallInstruction extends WasmInstruction {
     /**
      * {@inheritDoc}
      */
+    @Override
     AnyType getPushValueType() {
         countParams();
         return valueType;
@@ -183,6 +185,6 @@ class WasmCallInstruction extends WasmInstruction {
      */
     @Override
     public String toString() {
-        return getClass().getSimpleName() + ": call $" + name.signatureName + (comment == null ? "" : "  ;; \"" + comment + "\"");
+        return String.format("%s: call $%s%s", getClass().getSimpleName(), name.signatureName, (comment == null ? "" : String.format("  ;; \"%s\"",comment)));
     }
 }

@@ -36,7 +36,7 @@ public class StringManager extends LinkedHashMap<String, Integer> {
 
     private FunctionName    stringConstantFunction;
 
-    private FunctionManager functions;
+    private final FunctionManager functions;
 
     private int             stringMemoryOffset;
 
@@ -57,6 +57,7 @@ public class StringManager extends LinkedHashMap<String, Integer> {
      *            the string
      * @return the id
      */
+    @Override
     public Integer get( @Nonnull Object str ) {
         Integer id = super.get( str );
         if( id == null ) {
@@ -78,6 +79,7 @@ public class StringManager extends LinkedHashMap<String, Integer> {
             // register the function stringsMemoryOffset() as synthetic function
             WatCodeSyntheticFunctionName offsetFunction =
                             new WatCodeSyntheticFunctionName( "de/inetsoftware/jwebassembly/module/nativecode/StringTable", "stringsMemoryOffset", "()I", "", null, ValueType.i32 ) {
+                                @Override
                                 protected String getCode() {
                                     return "i32.const " + stringMemoryOffset;
                                 }
@@ -97,6 +99,7 @@ public class StringManager extends LinkedHashMap<String, Integer> {
      * @throws IOException
      *             if any I/O error occur
      */
+    @SuppressWarnings("PointlessBitwiseExpression")
     void prepareFinish( ModuleWriter writer ) throws IOException {
         // inform the writer of string count that it can allocate a table of type anyref for the constant strings
         int size = size();
@@ -138,6 +141,7 @@ public class StringManager extends LinkedHashMap<String, Integer> {
             // write the position where the string starts in the data section
             // little-endian byte order
             int position = offset + stringOut.size();
+            // is this for readability?
             dataStream.write( position >>> 0 );
             dataStream.write( position >>> 8 );
             dataStream.write( position >>> 16 );
@@ -165,8 +169,9 @@ public class StringManager extends LinkedHashMap<String, Integer> {
         if( value < 0 ) {
             throw new IOException( "Invalid negative value" );
         }
+        int b;
         do {
-            int b = value & 0x7F; // low 7 bits
+            b = value & 0x7F; // low 7 bits
             value >>= 7;
             if( value != 0 ) { /* more bytes to come */
                 b |= 0x80;
